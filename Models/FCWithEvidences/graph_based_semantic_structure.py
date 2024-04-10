@@ -9,7 +9,7 @@ from Models.BiDAF.wrapper import GGNN, GGNN_with_GSL, Linear
 from thirdparty.two_branches_attention import *
 import numpy as np
 import torch_utils as my_utils
-
+import gc
 torch.set_printoptions(profile="full")
 def min_max_norm(data):
     min_val = torch.min(data)
@@ -114,36 +114,28 @@ class Graph_basedSemantiStructure(BasicFCModel):
         # Step 1: word-level attention
         avg, word_att_weights = self._word_level_attention(left_tsr=query_repr, right_tsr=doc_out_ggnn,
                                                            right_mask=doc_mask, **kargs)
-        #new test
-        avg1 = avg
         # Step 2: evidence-level attention. We will override this function in sub-classes
+        claims_embs = []
         if self.use_claim_source:
             query_source_idx = kargs[KeyWordSettings.QuerySources]
             claim_embs = self.claim_source_embs(query_source_idx.long())  # (B, 1, D)
             claim_embs = claim_embs.squeeze(1)  # (B, D)
+            claims_embs.append(torch.clone(claim_embs))
+
             claim_embs = self._pad_left_tensor(claim_embs, **kargs)
             query_repr = torch.cat([claim_embs, query_repr], dim=-1)  # (B, 2D + D)
         avg, evd_att_weight = self._evidence_level_attention_new(query_repr, avg, document, **kargs)
         output = self._get_final_repr(left_tsr=query_repr, right_tsr=avg, **kargs)
         phi = self.out(output)  # (B, )
-        # newtest
-        # A = output@output.T
-        # A=outputs@outputs.T
-        # Y_probagation = (Y_true*(1-mask))
-        # score = A@Y_probagation
-        # score[i] = sum_j(A_ij*Y_probagation_j)/sum(1-mask)
         
+        del claim_embs
+        gc.collect()
 
 
         if kargs.get(KeyWordSettings.OutputRankingKey, False): 
             return phi, (word_att_weights, evd_att_weight)
-        #newtest
-        # T=1
-        # energy = - T * torch.logsumexp(phi / T, dim=-1)
-        # normalized_energy = min_max_norm(energy)
-        # softmax = torch.softmax(phi,dim=0)
-        # alpha = 0.5
-        return phi
+
+        return phi, torch.cat(claims_embs, dim=0)
         return alpha * normalized_energy + (1-alpha)*softmax
 
     def _generate_query_repr(self, query: torch.Tensor, **kargs):
@@ -294,5 +286,5 @@ class Graph_basedSemantiStructure(BasicFCModel):
         self.train(False)  # very important, to disable dropout
         assert query.size(0) == doc.size(0)
         #newtest
-        phi = self(query, doc, **kargs)  # (1, )  it is not softmax yet, how to check?
-        return phi
+        phi, output = self(query, doc, **kargs)  # (1, )  it is not softmax yet, how to check?
+        return phi, output
