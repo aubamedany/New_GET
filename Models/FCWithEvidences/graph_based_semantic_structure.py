@@ -10,18 +10,37 @@ from thirdparty.two_branches_attention import *
 import numpy as np
 import torch_utils as my_utils
 import gc
+query_length = 30
+from transformers import AutoTokenizer, AutoModel
+import torch
+# Load model from HuggingFace Hub
+tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
+model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
+model.eval()
+# model =model.to("cuda:0")
+
+
+
 torch.set_printoptions(profile="full")
 def min_max_norm(data):
     min_val = torch.min(data)
     max_val = torch.max(data)
     return (data - min_val) / (max_val - min_val)
+
+def percentile(x,data):
+    return len([data[i] for i in range(len(data)) if data[i]<=x ])/len(data)
+def percentile_norm(data):
+    return torch.tensor([percentile(data[i],data) for i in range(len(data))])
+def calculate_energy(logit, T=1):
+    energy = - T * torch.logsumexp(logit / T, dim=-1)
+    return energy
 class Graph_basedSemantiStructure(BasicFCModel):
     """ Hierarchical Multi-Head Attention Network for Fact-Checking (MAC)"""
 
     def __init__(self, params):
         super(Graph_basedSemantiStructure, self).__init__(params)
         self._params = params
-        self.embedding = self._make_default_embedding_layer(params)
+        # self.embedding = self._make_default_embedding_layer(params)
         self.num_classes = self._params["num_classes"]
         self.fixed_length_right = self._params["fixed_length_right"]
         self.fixed_length_left = self._params["fixed_length_left"]
@@ -38,7 +57,8 @@ class Graph_basedSemantiStructure(BasicFCModel):
         self.hidden_size = self._params["hidden_size"]
         self.output_size = self._params['output_size']
         self.gsl_rate = self._params["gsl_rate"]
-
+        # self.term_index = self._params["term_index"]
+        
         if self.use_claim_source:
             self.claim_source_embs = self._make_entity_embedding_layer(
                 self._params["claim_source_embeddings"], freeze=False)  # trainable
@@ -49,7 +69,8 @@ class Graph_basedSemantiStructure(BasicFCModel):
                 self._params["article_source_embeddings"], freeze=False)  # trainable
             self.article_emb_size = self._params["article_source_embeddings"].shape[1]
 
-        D = self._params["embedding_output_dim"]
+        # D = self._params["embedding_output_dim"]
+        D = 384
         
         # Graph Gated Neural Network with structural learning
         #module 2: graph_semantic_encoder
@@ -91,7 +112,8 @@ class Graph_basedSemantiStructure(BasicFCModel):
         """
         assert KeyWordSettings.Query_lens in kargs and KeyWordSettings.Doc_lens in kargs
         _, L = query.size()
-        D = self._params["embedding_output_dim"]
+        # D = self._params["embedding_output_dim"]
+        D =384
         assert query.size(0) == document.size(0)
         batch_size, n, R = document.size()  # batch_size = 32 which is real batch_size of each of mini-batches
         assert n == 30
@@ -101,13 +123,20 @@ class Graph_basedSemantiStructure(BasicFCModel):
         doc = kargs[KeyWordSettings.DocContentNoPaddingEvidence]  # (n1 + n2 + n3 + .. n_b, R)
         doc_mask = (doc >= 1)  # (B1, R) 0 is for padding word
         doc_adj = kargs[KeyWordSettings.Evd_Docs_Adj].float()  # (n1 + n2 + n3 + .. n_b, R, R)
-        embed_doc = self.embedding(doc.long())  # (n1 + n2 + n3 + .. n_b, R, D)
+        # embed_doc = self.embedding(doc.long())  # (n1 + n2 + n3 + .. n_b, R, D)
+        # new test
+        if self._params["use_transformer"]:
+            # embed_doc = self.embedding_query(doc,self.fixed_length_right)
+            # doc_sentence = self.decode_sentence(doc)
+            embed_doc = self.embedding(doc,self.fixed_length_right)
+            
+        else: 
+            embed_doc = self.embedding(doc.long()) 
         assert d_lens.shape[0] == embed_doc.size(0)
 
-        # ggnn for query
+            # ggnn for query
         query_repr = self._generate_query_repr_gnn(query, **kargs)  # output's shape is always (B1, self.hidden_size)
-        #newtest
-        query_repr1=query_repr
+        
         # ggnn for doc
         doc_out_ggnn = self.ggnn_with_gsl(doc_adj, embed_doc)
         
@@ -115,28 +144,19 @@ class Graph_basedSemantiStructure(BasicFCModel):
         avg, word_att_weights = self._word_level_attention(left_tsr=query_repr, right_tsr=doc_out_ggnn,
                                                            right_mask=doc_mask, **kargs)
         # Step 2: evidence-level attention. We will override this function in sub-classes
-        claims_embs = []
         if self.use_claim_source:
             query_source_idx = kargs[KeyWordSettings.QuerySources]
             claim_embs = self.claim_source_embs(query_source_idx.long())  # (B, 1, D)
             claim_embs = claim_embs.squeeze(1)  # (B, D)
-            claims_embs.append(torch.clone(claim_embs))
-
             claim_embs = self._pad_left_tensor(claim_embs, **kargs)
             query_repr = torch.cat([claim_embs, query_repr], dim=-1)  # (B, 2D + D)
         avg, evd_att_weight = self._evidence_level_attention_new(query_repr, avg, document, **kargs)
         output = self._get_final_repr(left_tsr=query_repr, right_tsr=avg, **kargs)
         phi = self.out(output)  # (B, )
         
-        del claim_embs
-        gc.collect()
-
-
         if kargs.get(KeyWordSettings.OutputRankingKey, False): 
             return phi, (word_att_weights, evd_att_weight)
-
-        return phi, torch.cat(claims_embs, dim=0)
-        return alpha * normalized_energy + (1-alpha)*softmax
+        return phi
 
     def _generate_query_repr(self, query: torch.Tensor, **kargs):
         q_new_indices, q_restoring_indices, q_lens = kargs[KeyWordSettings.QueryLensIndices]
@@ -144,8 +164,14 @@ class Graph_basedSemantiStructure(BasicFCModel):
         query_lens = kargs[KeyWordSettings.Query_lens]  # (B, )
         query_lens = query_lens.unsqueeze(-1)  # (B, 1)
 
-        embed_query = self.embedding(query.long())  # (B, L, D)
-
+        # embed_query = self.embedding(query.long())  # (B, L, D)
+        # new test 
+        if self._params["use_transformer"]:
+            # embed_query = self.embedding_query(query,self.fixed_length_left)
+            # query_sentence = self.decode_sentence(query)
+            embed_query = self.embedding(query,self.fixed_length_left)
+        else:
+            embed_query = self.embedding(query.long()) 
         # bilstm for query
         query_gru_hiddens = torch_utils.auto_rnn(self.query_bilstm, input_feats=embed_query, lens=q_lens,
                                                  new_indices=q_new_indices, restoring_indices=q_restoring_indices,
@@ -162,7 +188,14 @@ class Graph_basedSemantiStructure(BasicFCModel):
         # print(type(query_mask))
         # query_lens = query_lens[:, np.newaxis]
         adj = kargs[KeyWordSettings.Query_Adj].float()  # (B, L, L)
-        embed_query = self.embedding(query.long())  # (B, L, D)
+        # embed_query = self.embedding(query.long())  # (B, L, D)
+        # new test 
+        if self._params["use_transformer"]:
+            # embed_query = self.embedding_query(query,self.fixed_length_left)
+            # query_sentence = self.decode_sentence(query)
+            embed_query = self.embedding(query,self.fixed_length_left)
+        else:
+            embed_query = self.embedding(query.long()) 
         query_gnn_hiddens = self.ggnn4claim_1(adj, embed_query)
 
         query_repr = torch.sum(query_gnn_hiddens * query_mask.float(), dim=1) / query_lens.float()  # (B,2*D)
@@ -286,5 +319,68 @@ class Graph_basedSemantiStructure(BasicFCModel):
         self.train(False)  # very important, to disable dropout
         assert query.size(0) == doc.size(0)
         #newtest
-        phi, output = self(query, doc, **kargs)  # (1, )  it is not softmax yet, how to check?
-        return phi, output
+        # phi, output = self(query, doc, **kargs)  # (1, )  it is not softmax yet, how to check?
+        logits = self(query, doc, **kargs)
+        
+        return logits
+    
+    def convert_query2sentence(self,query):
+        str = ""
+        for ele in query:
+            for key, value in self.term_index.items():
+                if value == ele and key!="<PAD>":
+                    str+=key
+                    str+=" "
+                    break
+        return str[:-1]
+    def get_count_word(self,sentence):
+        count_word = list()
+        s = sentence.split(" ")
+        for ele in s :
+            count_word.append(len(tokenizer.tokenize(ele)))
+        return count_word
+
+    def convert2embed_sentence(self,tuple_query,length):
+        padding = tuple_query[0][-1]
+        embed_sentence_0 = tuple_query[0][1:-1]
+        embed_sentence = list()
+
+        for count in tuple_query[1]:
+            embed_word = embed_sentence_0[:count]
+            embed_word = torch.sum(embed_word,dim = 0)
+            embed_word = torch.nn.functional.normalize(embed_word, p=2, dim=0)
+            embed_sentence_0 = embed_sentence_0[count:]
+            embed_sentence.append(embed_word.detach().cpu().numpy())
+
+        while(len(embed_sentence)<length):
+            embed_sentence.append(padding.detach().cpu().numpy())
+
+        return np.array(embed_sentence)
+
+    def embedding_query(self,query,length):
+        list_left_content =[self.convert_query2sentence(x) for x in query]
+        list_count_word = [self.get_count_word(x) for x in list_left_content]
+        encoded_input = tokenizer(list_left_content, padding=True, truncation=True, return_tensors='pt')
+        model_output = model(**encoded_input)
+        last_hidden_state = torch.nn.functional.normalize(model_output.last_hidden_state, p=2, dim=1)
+        embed_sentence = torch.tensor([self.convert2embed_sentence(x,length) for x in list(zip(last_hidden_state,list_count_word))])
+        return embed_sentence
+    
+    # def get_embedding(self,sentence,length):
+    #     encoded_input = tokenizer(sentence, padding="max_length", truncation=False, return_tensors='pt',max_length=(length+1))
+    #     model_output = model(**encoded_input)
+    #     return model_output.last_hidden_state.squeeze()[1:].cpu().detach().numpy()
+    def embedding(self,query,length):
+        mask = (query >= 1).to("cpu")
+        query =query.to("cpu")
+        # encoded_input = tokenizer(query, padding="max_length", truncation=False, return_tensors='pt',max_length=(length+1))
+        # model_output = model(**encoded_input)
+        res = model(query, attention_mask=mask)
+        return res.last_hidden_state.to("cuda:0")
+
+        # return torch.tensor(np.array([self.get_embedding(x,length) for x in query])).to("cuda:0")
+    def decode_sentence(self,query_ids): #(B,30)
+        return [tokenizer.decode(x, skip_special_tokens=True) for x in query_ids]
+
+        
+    

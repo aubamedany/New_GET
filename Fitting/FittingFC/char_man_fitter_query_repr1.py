@@ -15,6 +15,19 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 import sklearn
 import torch.nn.functional as F
 import torch_utils as my_utils
+
+def min_max_norm(data):
+    min_val = torch.min(data)
+    max_val = torch.max(data)
+    return (data - min_val) / (max_val - min_val)
+
+def percentile(x,data):
+    return len([data[i] for i in range(len(data)) if data[i]<=x ])/len(data)
+def percentile_norm(data):
+    return torch.tensor([percentile(data[i],data) for i in range(len(data))])
+def calculate_energy(logit, T=1):
+    energy = - T * torch.logsumexp(logit / T, dim=-1)
+    return energy
 # def init_center(args, eps=0.001):
 #     """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
 #     if args.gpu < 0:
@@ -105,11 +118,21 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
 
             # ------ Move to here ----------------------------------- #
             self._net.train(True)
+            # if self.args.use_noise:
+            #     self.output_handler.myprint("============= Creating Feature Noise ========================" )
+            #     query_ids, left_contents, left_lengths, query_sources, query_char_sources, query_adj, \
+            #     evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, evd_char_sources, \
+            #     pair_labels, evd_docs_adj = self._sampler.create_feature_noise(train_iteractions,
+            #                                                                         self.fixed_num_evidences)
+            # else:
+            #     query_ids, left_contents, left_lengths, query_sources, query_char_sources, query_adj, \
+            #     evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, evd_char_sources, \
+            #     pair_labels, evd_docs_adj = self._sampler.get_train_instances_char_man(train_iteractions,
+            #                                                                         self.fixed_num_evidences)
             query_ids, left_contents, left_lengths, query_sources, query_char_sources, query_adj, \
             evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, evd_char_sources, \
             pair_labels, evd_docs_adj = self._sampler.get_train_instances_char_man(train_iteractions,
-                                                                                   self.fixed_num_evidences)
-
+                                                                                self.fixed_num_evidences) 
             queries, query_content, query_lengths, query_sources, query_char_sources, query_adj, \
             evd_docs, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, evd_char_sources, \
             pair_labels, evd_docs_adj = my_utils.shuffle(query_ids, left_contents, left_lengths, query_sources,
@@ -596,17 +619,52 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
             probs = self._net.predict(claim_content, padded_evd_contents,
                                       **additional_information)  # shape = (len(labels), )
             # print(f'Props: {probs}')
-            if output_ranking:
-                probs, att_scores = probs
-                predictions = probs.argmax(dim=1)
-                more_info = {KeyWordSettings.FCClass.AttentionWeightsInfo: att_scores}
-                list_error_analysis.append(
-                    self._prepare_error_analysis(testRatings, query, evd_ids, probs, labels, **more_info))
+            if self.args.use_noise:
+                # self.output_handler.myprint("============= Evaluating when using feature noise ========================" )
+                if output_ranking:
+                    probs, att_scores = probs
+
+
+                    energy = calculate_energy(probs,1)
+                    normalized_energy = min_max_norm(energy)
+
+                    old_softmax = torch.softmax(probs,dim=-1)
+                    alpha = 0.6
+                    new_softmax = old_softmax
+                    new_softmax[:,0] = alpha* old_softmax[:,0] + (1-alpha)*normalized_energy
+                    new_softmax[:,1] = 1-new_softmax[:,0]/(new_softmax[:,1]+new_softmax[:,0])
+                    new_softmax[:,0] = 1.0 - new_softmax[:,1]
+
+                    predictions = new_softmax.argmax(dim=1)
+                    more_info = {KeyWordSettings.FCClass.AttentionWeightsInfo: att_scores}
+                    list_error_analysis.append(
+                        self._prepare_error_analysis(testRatings, query, evd_ids, probs, labels, **more_info))
+                else:
+                    energy = calculate_energy(probs,1)
+                    normalized_energy = min_max_norm(energy)
+
+                    old_softmax = torch.softmax(probs,dim=-1)
+                    alpha = 0.6
+                    new_softmax = old_softmax
+                    new_softmax[:,0] = alpha* old_softmax[:,0] + (1-alpha)*normalized_energy
+                    new_softmax[:,1] = 1-new_softmax[:,0]/(new_softmax[:,1]+new_softmax[:,0])
+                    new_softmax[:,0] = 1.0 - new_softmax[:,1]
+                    predictions = new_softmax.argmax(dim=1)
+                
+                all_final_preds.append(float(my_utils.cpu(predictions).detach().numpy().flatten()))
+                all_final_probs.append(float(my_utils.cpu(probs[:, 1]).detach().numpy().flatten()))
             else:
-                predictions = probs.argmax(dim=1)
-            
-            all_final_preds.append(float(my_utils.cpu(predictions).detach().numpy().flatten()))
-            all_final_probs.append(float(my_utils.cpu(probs[:, 1]).detach().numpy().flatten()))
+                if output_ranking:
+                    probs, att_scores = probs
+                    predictions = probs.argmax(dim=1)
+                    more_info = {KeyWordSettings.FCClass.AttentionWeightsInfo: att_scores}
+                    list_error_analysis.append(
+                        self._prepare_error_analysis(testRatings, query, evd_ids, probs, labels, **more_info))
+                else:
+                    predictions = probs.argmax(dim=1)
+                all_final_preds.append(float(my_utils.cpu(predictions).detach().numpy().flatten()))
+                all_final_probs.append(float(my_utils.cpu(probs[:, 1]).detach().numpy().flatten()))
+
 
         results = self._computing_metrics(true_labels=all_labels, predicted_labels=all_final_preds, predicted_probs=all_final_probs)
         # print(f'predicted_probs{all_final_probs}')

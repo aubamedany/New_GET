@@ -8,8 +8,8 @@ from pathlib import Path
 import dill
 
 import matchzoo as mz
-
-
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
 def validate_context(func):
     """Validate context in the preprocessor."""
 
@@ -122,9 +122,9 @@ class BasePreprocessor(metaclass=abc.ABCMeta):
     def _default_units(cls) -> list:
         """Prepare needed process units."""
         return [
-            mz.preprocessors.units.tokenize.Tokenize(),
-            mz.preprocessors.units.lowercase.Lowercase(),
-            mz.preprocessors.units.punc_removal.PuncRemoval(),
+            mz.preprocessors.units.tokenize.Tokenize(tokenizer)
+            # mz.preprocessors.units.lowercase.Lowercase(),
+            # mz.preprocessors.units.punc_removal.PuncRemoval(),
         ]
 
 
