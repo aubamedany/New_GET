@@ -14,9 +14,9 @@ query_length = 30
 from transformers import AutoTokenizer, AutoModel
 import torch
 # Load model from HuggingFace Hub
-tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
-model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
-model.eval()
+# tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
+# model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
+# model.eval()
 # model =model.to("cuda:0")
 
 
@@ -40,6 +40,8 @@ class Graph_basedSemantiStructure(BasicFCModel):
     def __init__(self, params):
         super(Graph_basedSemantiStructure, self).__init__(params)
         self._params = params
+        self.model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
+        self.model.eval()
         # self.embedding = self._make_default_embedding_layer(params)
         self.num_classes = self._params["num_classes"]
         self.fixed_length_right = self._params["fixed_length_right"]
@@ -375,12 +377,12 @@ class Graph_basedSemantiStructure(BasicFCModel):
         query =query.to("cpu")
         # encoded_input = tokenizer(query, padding="max_length", truncation=False, return_tensors='pt',max_length=(length+1))
         # model_output = model(**encoded_input)
-        res = model(query, attention_mask=mask)
+        res = self.model(query, attention_mask=mask)
         return res.last_hidden_state.to("cuda:0")
 
         # return torch.tensor(np.array([self.get_embedding(x,length) for x in query])).to("cuda:0")
     def decode_sentence(self,query_ids): #(B,30)
-        return [tokenizer.decode(x, skip_special_tokens=True) for x in query_ids]
+        return [self.tokenizer.decode(x, skip_special_tokens=True) for x in query_ids]
 
         
     
