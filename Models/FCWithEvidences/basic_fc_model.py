@@ -18,7 +18,7 @@ class BasicFCModel(BaseModel):
     def __init__(self, params):
         super(BaseModel, self).__init__()
         self._params = params
-        self.embedding = self._make_default_embedding_layer(params)
+        # self.embedding = self._make_default_embedding_layer(params)
         self.num_classes = self._params["num_classes"]
         self.fixed_length_right = self._params["fixed_length_right"]
         self.fixed_length_left = self._params["fixed_length_left"]
@@ -39,7 +39,8 @@ class BasicFCModel(BaseModel):
                 self._params["article_source_embeddings"], freeze = False)  # trainable
             self.article_emb_size = self._params["article_source_embeddings"].shape[1]
 
-        D = self._params["embedding_output_dim"]
+        # D = self._params["embedding_output_dim"]
+        D = 384
         # self.linear1 = nn.Sequential(
         #     nn.Linear(self._params["embedding_output_dim"] + 3 * D, 1),
         #     # self.activation

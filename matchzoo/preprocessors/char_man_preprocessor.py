@@ -108,12 +108,12 @@ class CharManPreprocessor(BasePreprocessor):
         #                                     mode='right', verbose=verbose)
         # self._context['filter_unit'] = fitted_filter_unit
 
-        vocab_unit = build_vocab_unit(data_pack, verbose=verbose)
-        self._context['vocab_unit'] = vocab_unit
+        # vocab_unit = build_vocab_unit(data_pack, verbose=verbose)
+        # self._context['vocab_unit'] = vocab_unit
 
-        vocab_size = len(vocab_unit.state['term_index'])  # + 1  # +1 for padding
-        self._context['vocab_size'] = vocab_size
-        self._context['embedding_input_dim'] = vocab_size
+        # vocab_size = len(vocab_unit.state['term_index'])  # + 1  # +1 for padding
+        # self._context['vocab_size'] = vocab_size
+        # self._context['embedding_input_dim'] = vocab_size
         self._context['input_shapes'] = [(self._fixed_length_left,),
                                          (self._fixed_length_right,)]
 
@@ -160,13 +160,15 @@ class CharManPreprocessor(BasePreprocessor):
 
         # data_pack.apply_on_text(self._context['filter_unit'].transform,
         #                         mode='right', inplace=True, verbose=verbose)
-        data_pack.apply_on_text(self._context['vocab_unit'].transform,
-                                mode='both', inplace=True, verbose=verbose)
+        # data_pack.apply_on_text(self._context['vocab_unit'].transform,
+        #                         mode='both', inplace=True, verbose=verbose)
         data_pack.append_text_length(inplace=True, verbose=verbose)
-        data_pack.apply_on_text(self._left_fixedlength_unit.transform,
-                                mode='left', inplace=True, verbose=verbose)
+        # data_pack.apply_on_text(self._left_fixedlength_unit.transform,
+        #                         mode='left', inplace=True, verbose=verbose)
         data_pack.apply_on_text(self._right_fixedlength_unit.transform,
                                 mode='right', inplace=True, verbose=verbose)
+        
+        
 
         max_len_left = self._fixed_length_left
         max_len_right = self._fixed_length_right

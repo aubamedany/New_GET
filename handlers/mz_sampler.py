@@ -7,7 +7,7 @@ from scipy.sparse import csr_matrix
 import torch_utils
 import time
 import interactions
-
+import torch
 
 class Sampler(object):
     def __init__(self):
@@ -174,3 +174,150 @@ class Sampler(object):
         return query_ids, query_contents, query_lengths, query_sources, query_char_source, query_adj,\
                evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, \
                evd_docs_char_source_contents, query_labels, evd_docs_adj
+    def create_feature_noise(self, interactions: interactions.ClassificationInteractions,
+                                     fixed_num_evidences: int):
+        """
+        For each query/claim, we get its x number of evidences.
+        Parameters
+        ----------
+        interactions: :class:`interactions.ClassificationInteractions`
+            training instances,
+        fixed_num_evidences: `int`
+            fixed number of evidences for each claim
+        """
+
+        query_ids = interactions.claims.astype(np.int64)  # must be all unique
+        query_labels = interactions.claims_labels
+        query_contents = interactions.np_query_contents.astype(np.int64)
+        query_lengths = interactions.np_query_lengths.astype(np.int64)
+        query_char_source = interactions.np_query_char_source.astype(np.int64)
+        query_sources = np.array([interactions.dict_claim_source[q] for q in query_ids])
+        # query_adj = np.zeros((query_ids.shape[0], query_contents.shape[1], query_contents.shape[1]), np.int64)
+        # query_adj = interactions.np_query_adj.astype(np.int64)
+        query_adj = interactions.np_query_adj
+
+        evd_docs_ids = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64) - 1  # all indices are -1
+        # by default it is all pad tokens
+        evd_docs_contents = np.zeros((query_ids.shape[0], fixed_num_evidences, interactions.padded_doc_length),
+                                     np.int64)
+        evd_docs_lens = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64)
+        evd_sources = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64) - 1  # for padding sources are -1
+        evd_cnt_each_query = np.zeros((query_ids.shape[0]), np.int64)
+        evd_docs_char_source_contents = np.zeros((query_ids.shape[0], fixed_num_evidences,
+                                                  interactions.padded_doc_char_source_length), np.int64)
+        evd_docs_adj = np.zeros((query_ids.shape[0], fixed_num_evidences, interactions.padded_doc_length,
+                                 interactions.padded_doc_length), np.float64)
+
+        for i, u in enumerate(query_ids):
+            evidences_info = interactions.dict_claims_and_evidences_test[u]  # use u not i
+            assert len(evidences_info) <= fixed_num_evidences
+            evd_cnt_each_query[i] = len(evidences_info[0])  # number of real evidences for the query i
+            # we have a list of evidences, now I need to take the content and doc_id
+            for idx, (doc_id, doc_label, doc_content, doc_len, docs_adj) in enumerate(zip(*evidences_info)):
+                evd_docs_contents[i][idx] = doc_content  # we already pad the content array with zeros due to init
+                evd_docs_lens[i][idx] = doc_len  # we set 0 length for padding evidences
+                evd_docs_ids[i][idx] = doc_id  # we set -1 as index for padding evidences
+                evd_sources[i][idx] = interactions.dict_evd_source[doc_id][0]  # -1 since we have an array size 1
+                evd_docs_char_source_contents[i][idx] = interactions.dict_char_right_src[doc_id]
+                evd_docs_adj[i][idx] = interactions.dict_doc_adj[doc_id]
+
+        # query_ids_new, query_contents_new, query_lengths_new, query_sources_new, query_char_source_new, query_adj_new,\
+        #        evd_docs_ids_new, evd_docs_contents_new, evd_docs_lens_new, evd_sources_new, evd_cnt_each_query_new, \
+        #        evd_docs_char_source_contents_new, query_labels_new, evd_docs_adj_new = query_ids, query_contents, query_lengths, query_sources, query_char_source, query_adj,\
+        #        evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, \
+        #        evd_docs_char_source_contents, query_labels, evd_docs_adj
+        # new ood
+        n,l = query_contents.shape
+        idx = np.array(torch.randint(0, n, (n, 2)))
+        mask = np.array(torch.randint(0, 2, (n,l)))
+
+        query_contents_new = query_contents[idx[:, 0]] * mask + query_contents[idx[:, 1]] * (1 - mask)
+        query_labels_new = np.zeros(query_labels.shape)
+
+        size = int(0.3*n)
+        query_ids = np.concatenate((query_ids, query_ids[:size]), axis=0)
+        query_contents = np.concatenate((query_contents, query_contents_new[:size]), axis=0)  #modified
+        query_lengths = np.concatenate((query_lengths, query_lengths[:size]), axis=0)
+        query_sources = np.concatenate((query_sources, query_sources[:size]), axis=0)
+        query_char_source = np.concatenate((query_char_source, query_char_source[:size]), axis=0)
+        query_adj = np.concatenate((query_adj, query_adj[:size]), axis=0)
+        evd_docs_ids = np.concatenate((evd_docs_ids, evd_docs_ids[:size]), axis=0)
+        evd_docs_contents = np.concatenate((evd_docs_contents, evd_docs_contents[:size]), axis=0)
+        evd_docs_lens = np.concatenate((evd_docs_lens, evd_docs_lens[:size]), axis=0)
+        evd_sources = np.concatenate((evd_sources, evd_sources[:size]), axis=0)
+        evd_cnt_each_query = np.concatenate((evd_cnt_each_query, evd_cnt_each_query[:size]), axis=0)
+        evd_docs_char_source_contents = np.concatenate((evd_docs_char_source_contents, evd_docs_char_source_contents[:size]), axis=0)
+        query_labels = np.concatenate((query_labels, query_labels_new[:size]), axis=0)
+        evd_docs_adj = np.concatenate((evd_docs_adj, evd_docs_adj[:size]), axis=0)
+
+        return query_ids, query_contents, query_lengths, query_sources, query_char_source, query_adj,\
+               evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, \
+               evd_docs_char_source_contents, query_labels, evd_docs_adj
+   
+   
+    def create_label_noise(self, interactions: interactions.ClassificationInteractions,
+                                     fixed_num_evidences: int):
+        """
+        For each query/claim, we get its x number of evidences.
+        Parameters
+        ----------
+        interactions: :class:`interactions.ClassificationInteractions`
+            training instances,
+        fixed_num_evidences: `int`
+            fixed number of evidences for each claim
+        """
+
+        query_ids = interactions.claims.astype(np.int64)  # must be all unique
+        query_labels = interactions.claims_labels
+        query_contents = interactions.np_query_contents.astype(np.int64)
+        query_lengths = interactions.np_query_lengths.astype(np.int64)
+        query_char_source = interactions.np_query_char_source.astype(np.int64)
+        query_sources = np.array([interactions.dict_claim_source[q] for q in query_ids])
+        # query_adj = np.zeros((query_ids.shape[0], query_contents.shape[1], query_contents.shape[1]), np.int64)
+        # query_adj = interactions.np_query_adj.astype(np.int64)
+        query_adj = interactions.np_query_adj
+
+        evd_docs_ids = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64) - 1  # all indices are -1
+        # by default it is all pad tokens
+        evd_docs_contents = np.zeros((query_ids.shape[0], fixed_num_evidences, interactions.padded_doc_length),
+                                     np.int64)
+        evd_docs_lens = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64)
+        evd_sources = np.zeros((query_ids.shape[0], fixed_num_evidences), np.int64) - 1  # for padding sources are -1
+        evd_cnt_each_query = np.zeros((query_ids.shape[0]), np.int64)
+        evd_docs_char_source_contents = np.zeros((query_ids.shape[0], fixed_num_evidences,
+                                                  interactions.padded_doc_char_source_length), np.int64)
+        evd_docs_adj = np.zeros((query_ids.shape[0], fixed_num_evidences, interactions.padded_doc_length,
+                                 interactions.padded_doc_length), np.float64)
+
+        for i, u in enumerate(query_ids):
+            evidences_info = interactions.dict_claims_and_evidences_test[u]  # use u not i
+            assert len(evidences_info) <= fixed_num_evidences
+            evd_cnt_each_query[i] = len(evidences_info[0])  # number of real evidences for the query i
+            # we have a list of evidences, now I need to take the content and doc_id
+            for idx, (doc_id, doc_label, doc_content, doc_len, docs_adj) in enumerate(zip(*evidences_info)):
+                evd_docs_contents[i][idx] = doc_content  # we already pad the content array with zeros due to init
+                evd_docs_lens[i][idx] = doc_len  # we set 0 length for padding evidences
+                evd_docs_ids[i][idx] = doc_id  # we set -1 as index for padding evidences
+                evd_sources[i][idx] = interactions.dict_evd_source[doc_id][0]  # -1 since we have an array size 1
+                evd_docs_char_source_contents[i][idx] = interactions.dict_char_right_src[doc_id]
+                evd_docs_adj[i][idx] = interactions.dict_doc_adj[doc_id]
+
+        n = len(query_ids)
+        idx = np.array(torch.randperm(n)[:int(n * 0.5)])
+        labels_new = np.copy(query_labels)
+        labels_new[idx] = np.array(torch.randint(0, query_labels.max(), (int(n * 0.5), )))
+
+
+    # if hasattr(data, 'train_mask'):
+    #     tensor_split_idx = {}
+    #     idx = torch.arange(data.num_nodes)
+    #     tensor_split_idx['train'] = idx[data.train_mask]
+    #     tensor_split_idx['valid'] = idx[data.val_mask]
+    #     tensor_split_idx['test'] = idx[data.test_mask]
+    #
+    #     dataset.splits = tensor_split_idx
+
+
+        return query_ids, query_contents, query_lengths, query_sources, query_char_source, query_adj,\
+               evd_docs_ids, evd_docs_contents, evd_docs_lens, evd_sources, evd_cnt_each_query, \
+               evd_docs_char_source_contents, labels_new, evd_docs_adj

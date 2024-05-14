@@ -62,7 +62,6 @@ def fit_models(args):
         file_handler.myprint("============= FOLD %s ========================" % i)
         file_handler.myprint(settings)
         file_handler.myprint("Setting seed to " + str(args.seed))
-       
         predict_pack = cls_load_data.load_data(root + "/%sfold" % args.num_folds, 'test_%s' % i, kfolds = args.num_folds)
         train_pack = cls_load_data.load_data(root + "/%sfold" % args.num_folds, 'train_%sres' % i, kfolds = args.num_folds)
         valid_pack = cls_load_data.load_data(root, 'dev', kfolds = args.num_folds)
@@ -106,11 +105,11 @@ def fit_models(args):
 
         print("Loading word embeddings......")
         t1_emb = time.time()
-        term_index = preprocessor.context['vocab_unit'].state['term_index']
-        glove_embedding = mz.datasets.embeddings.load_glove_embedding_FC(dimension = args.word_embedding_size,
-                                                                         term_index = term_index, **additional_data)
+        # term_index = preprocessor.context['vocab_unit'].state['term_index']
+        # glove_embedding = mz.datasets.embeddings.load_glove_embedding_FC(dimension = args.word_embedding_size,
+        #                                                                  term_index = term_index, **additional_data)
 
-        embedding_matrix = glove_embedding.build_matrix(term_index)
+        # embedding_matrix = glove_embedding.build_matrix(term_index)
         entity_embs1 = entity_embedding.EntityEmbedding(args.claim_src_emb_size)
         claim_src_embs_matrix = entity_embs1.build_matrix(preprocessor.context['claim_source_unit'].state['term_index'])
 
@@ -121,7 +120,7 @@ def fit_models(args):
         print("Time to load word embeddings......", (t2_emb - t1_emb))
 
         match_params = {}
-        match_params['embedding'] = embedding_matrix
+        # match_params['embedding'] = embedding_matrix
         match_params["num_classes"] = args.num_classes
         match_params["fixed_length_right"] = args.fixed_length_right
         match_params["fixed_length_left"] = args.fixed_length_left
@@ -147,6 +146,8 @@ def fit_models(args):
 
         match_params["embedding_freeze"] = True
         match_params["output_size"] = 2 # if args.dataset == "Snopes" else 3
+        # match_params["term_index"]= term_index
+        match_params["use_transformer"]= args.use_transformer
         match_model = graph_based_semantic_structure.Graph_basedSemantiStructure(match_params)
 
         file_handler.myprint("Fitting Model")
@@ -234,6 +235,8 @@ if __name__ == '__main__':
     parser.add_argument('--lamda1', type=float, default=1.0, help='weight for regularization')
     parser.add_argument('--lamda2', type=float, default=1.0, help='weight for oc')
     parser.add_argument('--use_oc', type=bool,default=False ,help='whether to use oc loss')
+    parser.add_argument('--use_noise', type=bool, default=False, help='Using feature noise')
+    parser.add_argument('--use_transformer', type=bool, default=False, help='Using sentence transformer')
     args = parser.parse_args()
 
     avg_test_results = fit_models(args)

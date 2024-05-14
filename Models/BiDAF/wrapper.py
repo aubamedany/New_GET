@@ -218,8 +218,8 @@ class GSL(nn.Module):
         num_preserve_node = int(self.rate * N)
         _, indices = score.topk(num_preserve_node, 1)
         indices = torch.squeeze(indices, dim=-1)
-        # mask = torch.zeros([BATCH_SIZE, N, N]).to("cuda:0")
-        mask = torch.zeros([BATCH_SIZE, N, N])
+        mask = torch.zeros([BATCH_SIZE, N, N]).to("cuda:0")
+        # mask = torch.zeros([BATCH_SIZE, N, N])
         # print(f"adj:{adj.get_device()}")
         for i in range(BATCH_SIZE):
             mask[i].index_fill_(0, indices[i], 1)

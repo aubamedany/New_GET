@@ -37,9 +37,12 @@ def load_data(
     :return: A DataPack unless `task` is `classificiation` and `return_classes`
         is `True`: a tuple of `(DataPack, classes)` in that case.
     """
+    # if stage not in ['dev'] + ["train_%sres" % i for i in range(kfolds)] + ["test_%s" % i for i in range(kfolds)]:
+    #     raise ValueError("%s is not a valid stage. Must be one of `train`, `dev`, and `test`." % stage)
     if stage not in ['dev'] + ["train_%sres" % i for i in range(kfolds)] + ["test_%s" % i for i in range(kfolds)]:
         raise ValueError("%s is not a valid stage. Must be one of `train`, `dev`, and `test`." % stage)
-
+    # if stage not in ['devnew'] + ["trainnew"] + ["testnew"]:
+    #     raise ValueError("%s is not a valid stage. Must be one of `train`, `dev`, and `test`." % stage)
     # data_root = _download_data()
     data_root = data_root
     file_path = os.path.join(data_root, '%s.tsv' % (stage))
