@@ -241,10 +241,10 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
         compute cross entropy loss
         Parameters
         ----------
-        query_ids: (B, )
+        query_ids: (B, ) *
         query_contents: (B, L)
         query_lens: (B, )
-        evd_doc_ids: (B, n)
+        evd_doc_ids: (B, n) * 
         evd_doc_contents: (B, n, R)
         evd_docs_lens: (B, n)
         evd_sources: (B, n)
@@ -479,24 +479,19 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
             KeyWordSettings.Query_Adj: ood_query_adj,
             KeyWordSettings.Evd_Docs_Adj: ood_e_adj                       # flatten->(n1 + n2 ..., R, R)
         }
-
+        logits = self._net(query_contents, evd_doc_contents, **additional_paramters)
+        return self._loss_func(logits, labels.float())
 #------------------------------------reg_loss-------------------------------------------#        
         # my_utils.gpu(torch.from_numpy(ood_e_lens), self._use_cuda)
         logits_in = self._net(query_contents[query_ind_idx], evd_doc_contents[query_ind_idx], **ind_additional_paramters)
         logits_out = self._net(query_contents[query_ood_idx], evd_doc_contents[query_ood_idx], **ood_additional_paramters)
         logits = self._net(query_contents, evd_doc_contents, **additional_paramters)
-        # sup_loss=self._loss_func(logits_in, labels[query_ind_idx].float())
-        # sup_loss = nn.BCEWithLogitsLoss(logits_in,labels[query_ind_idx].to(torch.float))
-        # sup_loss=self._loss_func(logits_in, labels[query_ind_idx].float())
+
         sup_loss=self._loss_func(logits, labels.float())
         T=1
         energy_in = - T * torch.logsumexp(logits_in / T, dim=-1)
         energy_out = - T * torch.logsumexp(logits_out / T, dim=-1)
-        
-        # energy_in = energy_in[query_ind_idx]
-        # energy_out = energy_out[query_ind_idx]
-        
-        # truncate to have the same length
+
         if energy_in.shape[0] != energy_out.shape[0]:
             min_n = min(energy_in.shape[0], energy_out.shape[0])
             energy_in = energy_in[:min_n]
@@ -506,7 +501,7 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
         m_out=-1
         
         reg_loss = torch.mean(F.relu(energy_in - m_in) ** 2 + F.relu(m_out - energy_out) ** 2)
-        # loss = sup_loss + lamda * reg_loss
+
 #----------------------------------oc_loss---------------------------------------------- #       
         # eps = 0.01 
         # nu = 0.1
@@ -787,8 +782,8 @@ class CharManFitterQueryRepr1(MultiLevelAttentionCompositeFitter):
                                     test_interactions: interactions.ClassificationInteractions,
                                     epoch_num: int, epoch_train_time: float, epoch_loss: float):
         t1 = time.time()
-        assert len(val_interactions.dict_claims_and_evidences_test) in KeyWordSettings.ClaimCountVal, \
-            len(val_interactions.dict_claims_and_evidences_test)
+        # assert len(val_interactions.dict_claims_and_evidences_test) in KeyWordSettings.ClaimCountVal, \
+        #     len(val_interactions.dict_claims_and_evidences_test)
         result_val = self.evaluate(val_interactions, topN)
         auc_val = result_val[KeyWordSettings.AUC_metric]
         f1_macro_val = result_val[KeyWordSettings.F1_macro]

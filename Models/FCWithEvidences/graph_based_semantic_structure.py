@@ -42,6 +42,7 @@ class Graph_basedSemantiStructure(BasicFCModel):
         self._params = params
         self.model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
         self.model.eval()
+        # self.model = self.model.to("cpu")
         # self.embedding = self._make_default_embedding_layer(params)
         self.num_classes = self._params["num_classes"]
         self.fixed_length_right = self._params["fixed_length_right"]
@@ -373,8 +374,10 @@ class Graph_basedSemantiStructure(BasicFCModel):
     #     model_output = model(**encoded_input)
     #     return model_output.last_hidden_state.squeeze()[1:].cpu().detach().numpy()
     def embedding(self,query,length):
-        mask = (query >= 1).to("cpu")
-        query =query.to("cpu")
+        # mask = (query >= 1).to("cpu")
+        # query =query.to("cpu")
+        mask = (query >= 1).to("cuda:0")
+        query =query.to("cuda:0")
         # encoded_input = tokenizer(query, padding="max_length", truncation=False, return_tensors='pt',max_length=(length+1))
         # model_output = model(**encoded_input)
         res = self.model(query, attention_mask=mask)

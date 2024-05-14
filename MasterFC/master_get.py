@@ -201,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', nargs = '?', default = 'adam', help = 'Specify an optimizer: adam')
 
     parser.add_argument('--loss_type', nargs = '?', default = 'cross_entropy', help = 'Specify a loss function')
-    parser.add_argument('--word_embedding_size', default = 384, help = 'the dimensions of word embeddings', type = int)
+    parser.add_argument('--word_embedding_size', default = 300, help = 'the dimensions of word embeddings', type = int)
     parser.add_argument('--verbose', type = int, default = 1,  help = 'Show performance per X iterations')
     parser.add_argument('--cuda', type = int, default = 1, help = 'using cuda or not')
     parser.add_argument('--seed', type = int, default = 123456, help = 'random seed')
@@ -225,7 +225,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--dropout_left', type = float, default = 0.2, help = 'Dropout rate for word embs in claim')
     parser.add_argument('--dropout_right', type = float, default = 0.2, help = 'Dropout rate for word embs in articles')
-    parser.add_argument('--hidden_size', type=int, default = 384, help = 'Hidden Size of LSTM')
+    parser.add_argument('--hidden_size', type=int, default = 300, help = 'Hidden Size of LSTM')
 
     parser.add_argument('--article_src_emb_size', type = int, default = 128, help = 'Embedding size of article')
     parser.add_argument('--claim_src_emb_size', type = int, default = 128, help = 'Embedding size of article')

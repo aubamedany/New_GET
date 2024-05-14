@@ -167,6 +167,8 @@ class CharManPreprocessor(BasePreprocessor):
         #                         mode='left', inplace=True, verbose=verbose)
         data_pack.apply_on_text(self._right_fixedlength_unit.transform,
                                 mode='right', inplace=True, verbose=verbose)
+        
+        
 
         max_len_left = self._fixed_length_left
         max_len_right = self._fixed_length_right
